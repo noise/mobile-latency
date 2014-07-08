@@ -12,7 +12,7 @@ define(function(require, exports, module) {
     var myPos = [ Math.floor(Math.random() * 300) - 150, Math.floor(Math.random() * 300) - 150];
 
     var myBall = new Surface({
-        content: myName,
+        content: '<br/>' + myName,
         size: [100, 100],
         properties: {
             backgroundColor: '#44CC44',
@@ -43,6 +43,9 @@ define(function(require, exports, module) {
         myPos = data['position']
         sendUpdate()
     });
+    draggable.on('end', function(data) {
+        console.log(latencies)
+    });
 
     // a modifier that centers the surface
     var centerModifier = new Modifier({origin : [0.5, 0.5]});
@@ -60,12 +63,16 @@ define(function(require, exports, module) {
     var counter = 0;
 
     var host = location.origin.replace(/^http/, 'ws')
+    
+    var LATENCY_INTERVAL = 100
+    var LATENCY_SAMPLES = Math.floor(10000 / LATENCY_INTERVAL)
+    var latencies = []
 
     function sendUpdate() {
         msg = { 'type': 'update',
                 'name': myName, 
                 'pos': myPos,
-                'ts': '' + new Date()};
+                'ts': '' + new Date().getTime()};
         ws.send(JSON.stringify(msg));
     }
     
@@ -74,7 +81,7 @@ define(function(require, exports, module) {
 
         ws.onmessage = function (event) {
             data = JSON.parse(event.data)
-            console.log('onmessage', data)
+            //console.log('onmessage, data:', data)
 
             name = data['name'];
             if (name === myName) {
@@ -88,11 +95,15 @@ define(function(require, exports, module) {
                     console.log(name, ' already in list, skipping add')
                     break;
                 }
+                if (!('pos' in data)) {
+                    console.log('bad join message, no pos')
+                    break;
+                }
                 console.log('adding new ball')
                 var ball = Object({
                     name: name,
                     surface: new Surface({
-                        content: name,
+                        content: '<br/>' + name,
                         size: [80, 80],
                         properties: {
                             backgroundColor: randomColor(180),
@@ -103,6 +114,7 @@ define(function(require, exports, module) {
                     pos: data.pos,
                     mod: new Modifier({
                         transform : function(){
+                            //console.log(data.pos)
                             return Transform.translate(ball.pos[0], ball.pos[1], 0);
                         }
                     })
@@ -127,19 +139,43 @@ define(function(require, exports, module) {
                     delete others[name]
                 }
                 break;
+            case 'ping':
+                ws.send(JSON.stringify({type: 'pong', ts: data.ts}));
+                break;
+            case 'pong':
+                //console.log(data)
+                latency = new Date().getTime() - data.ts
+                latencies.push(latency)
+                if (latencies.length > LATENCY_SAMPLES) {
+                    latencies.shift()
+                }
+                s = latencies.slice(0).sort(function(a, b) { return a - b})
+                //console.log(s)
+                median = s[Math.floor(s.length/2)]
+                //console.log(s.length, s.length/2, median)
+                myBall.setContent('<br/>' + myName + '<br/>med:' + median + 'ms<br/>' + latency + 'ms')
+                break;
+                
             } // switch
               
         }; // onmessage
-    
+
+        var pinger;
         ws.onopen = function() {
             console.log('open')
             msg = JSON.stringify({'type': 'join', 'name': myName, 'pos': myPos});
             console.log(msg);
             ws.send(msg);
+
+            pinger = setInterval(function(){
+                ws.send(JSON.stringify({type: 'ping', ts: new Date().getTime()}))
+            }, LATENCY_INTERVAL);
         };
         
         ws.onclose = function(event) {
             console.log('close', event.code, event.reason)
+            clearInterval(pinger);
+            myBall.setContent('<br/>' + myName + '<br/>[closed]');
             setTimeout( function() {
                 console.log('try to reconnect...');
                 connect()
@@ -151,5 +187,6 @@ define(function(require, exports, module) {
     } // connect
 
     var ws = connect()
+
 
 });

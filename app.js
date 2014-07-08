@@ -18,9 +18,6 @@ wss.broadcast = function(data, sender) {
         if (this.clients[i] !== sender) {
             this.clients[i].send(data);
         }
-        else {
-            console.log('skip send to self')
-        }
 };
 
 wss.on("connection", function(ws) {
@@ -32,7 +29,10 @@ wss.on("connection", function(ws) {
         msg = JSON.stringify({'type': 'leave', 'name': ws.name});
         //console.log(msg);
         wss.broadcast(msg, ws);
-        console.log('wss clients: ', wss.clients.length)
+        console.log('wss clients:')
+        for (var i in wss.clients) {
+            console.log(wss.clients[i].id)
+        }
     });
 
     ws.on('error', function(error) {
@@ -45,11 +45,20 @@ wss.on("connection", function(ws) {
 
         if (obj['type'] === 'join') {
             ws.name = obj['name'];
+            ws['pos'] = obj['pos'];
             ws.id += '/' + ws.name
-            console.log('join:', ws.id)
+            console.log('join:', ws.id, data)
+            wss.broadcast(data, ws)
         }
-        ws['pos'] = obj['pos'];
-        wss.broadcast(data, ws)
+        else if (obj['type'] === 'ping') {
+            ws.send(JSON.stringify({type: 'pong', ts: obj.ts}));
+        } 
+        else {
+            // update
+            ws['pos'] = obj['pos'];
+            wss.broadcast(data, ws)
+        }
+
     });
 
     for (var i in wss.clients) {
@@ -64,8 +73,8 @@ wss.on("connection", function(ws) {
     }
 })
 
-setInterval(function() {
-    console.log('pinging all clients')
-    wss.broadcast(JSON.stringify('ping'))
-}, 5000)
+// setInterval(function() {
+//     console.log('pinging all clients')
+//     wss.broadcast(JSON.stringify({type: 'ping', ts: new Date().getTime()}))
+// }, 5000)
 
