@@ -144,6 +144,7 @@ define(function(require, exports, module) {
                 console.log('try to reconnect...');
                 connect()
             }, 2000);
+            // TODO: give up after N tries, display status, button for reconnect
         };
 
         return ws;
