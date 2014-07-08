@@ -1,62 +1,64 @@
-var WebSocketServer = require("ws").Server
-var http = require("http")
-var express = require("express")
-var app = express()
-var port = process.env.PORT || 5000
 
-app.use(express.static(__dirname + "/"))
+var WebSocketServer = require("ws").Server;
+var http = require("http");
+var express = require("express");
+var app = express();
+var port = process.env.PORT || 5000;
 
-var server = http.createServer(app)
-server.listen(port)
+app.use(express.static(__dirname + "/"));
 
-console.log("http server listening on %d", port)
+var server = http.createServer(app);
+server.listen(port);
 
-var wss = new WebSocketServer({server: server})
+console.log("http server listening on %d", port);
 
-wss.broadcast = function(data, sender) {
-    for(var i in this.clients)
+var wss = new WebSocketServer({server: server});
+
+wss.broadcast = function (data, sender) {
+    for (var i in this.clients) {
         if (this.clients[i] !== sender) {
             this.clients[i].send(data);
         }
+    }
 };
 
 wss.on("connection", function(ws) {
     ws.id = ws.upgradeReq.connection.remoteAddress + ':' + ws.upgradeReq.connection.remotePort;
-    console.log('conn:', ws.id)
+    console.log('conn:', ws.id);
     
     ws.on("close", function() {
         console.log("websocket connection close: ", ws.name);
         msg = JSON.stringify({'type': 'leave', 'name': ws.name});
         //console.log(msg);
         wss.broadcast(msg, ws);
-        console.log('wss clients:')
+        console.log('wss clients:');
         for (var i in wss.clients) {
-            console.log(wss.clients[i].id)
+            console.log(wss.clients[i].id);
         }
     });
 
     ws.on('error', function(error) {
-        console.log('error:', error, ws.id)
+        console.log('error:', error, ws.id);
     });
     
     ws.on('message', function(data, flags) {
-        obj = JSON.parse(data)
+        obj = JSON.parse(data);
         //console.log('got msg', data)
 
-        if (obj['type'] === 'join') {
-            ws.name = obj['name'];
-            ws['pos'] = obj['pos'];
-            ws.id += '/' + ws.name
-            console.log('join:', ws.id, data)
-            wss.broadcast(data, ws)
+        if (obj.type === 'join') {
+            ws.name = obj.name;
+            ws.pos = obj.pos;
+            ws.id += '/' + ws.name;
+            console.log('join:', ws.id, data);
+            wss.broadcast(data, ws);
         }
-        else if (obj['type'] === 'ping') {
+        else if (obj.type === 'ping') {
             ws.send(JSON.stringify({type: 'pong', ts: obj.ts}));
         } 
         else {
             // update
-            ws['pos'] = obj['pos'];
-            wss.broadcast(data, ws)
+            ws.pos = obj.pos;
+            wss.broadcast(data, ws);
         }
 
     });
@@ -71,7 +73,8 @@ wss.on("connection", function(ws) {
                                });
         ws.send(msg);
     }
-})
+});
+
 
 // setInterval(function() {
 //     console.log('pinging all clients')

@@ -1,3 +1,4 @@
+
 define(function(require, exports, module) {
     // import dependencies
     var Engine = require('famous/core/Engine');
@@ -40,11 +41,11 @@ define(function(require, exports, module) {
     var draggable = new Draggable();
     draggable.subscribe(myBall);
     draggable.on('update', function(data) {
-        myPos = data['position']
-        sendUpdate()
+        myPos = data.position;
+        sendUpdate();
     });
     draggable.on('end', function(data) {
-        console.log(latencies)
+        console.log(latencies);
     });
 
     // a modifier that centers the surface
@@ -57,16 +58,16 @@ define(function(require, exports, module) {
     n1.add(draggable)
         .add(myBall);
 
-    draggable.setPosition(myPos)
-    console.log(draggable)
+    draggable.setPosition(myPos);
+    console.log(draggable);
     
     var counter = 0;
 
-    var host = location.origin.replace(/^http/, 'ws')
+    var host = location.origin.replace(/^http/, 'ws');
     
-    var LATENCY_INTERVAL = 100
-    var LATENCY_SAMPLES = Math.floor(10000 / LATENCY_INTERVAL)
-    var latencies = []
+    var LATENCY_INTERVAL = 100;
+    var LATENCY_SAMPLES = Math.floor(10000 / LATENCY_INTERVAL);
+    var latencies = [];
 
     function sendUpdate() {
         msg = { 'type': 'update',
@@ -80,26 +81,26 @@ define(function(require, exports, module) {
         ws = new WebSocket(host);
 
         ws.onmessage = function (event) {
-            data = JSON.parse(event.data)
+            data = JSON.parse(event.data);
             //console.log('onmessage, data:', data)
 
-            name = data['name'];
+            name = data.name;
             if (name === myName) {
-                console.log('not listening to myself')
+                console.log('not listening to myself');
                 return;
             }
             
             switch (data.type) {
             case 'join':
                 if (name in others) {
-                    console.log(name, ' already in list, skipping add')
+                    console.log(name, ' already in list, skipping add');
                     break;
                 }
                 if (!('pos' in data)) {
-                    console.log('bad join message, no pos')
+                    console.log('bad join message, no pos');
                     break;
                 }
-                console.log('adding new ball')
+                console.log('adding new ball');
                 var ball = Object({
                     name: name,
                     surface: new Surface({
@@ -125,35 +126,33 @@ define(function(require, exports, module) {
             case 'update':
                 if (name in others) {
                     // update position
-                    others[name].pos = data.pos
+                    others[name].pos = data.pos;
                 }
                 break;
             case 'leave':
-                console.log(data)
-                console.log(others)
+                console.log(data);
+                console.log(others);
                 if (name in others) {
-                    console.log('remove:', name, 'surface: ', others[name].surface)
+                    console.log('remove:', name, 'surface: ', others[name].surface);
                     // TODO: there is no remove
                     //n1.remove(others[name].surface)
-                    others[name].pos = [-2000, -2000]
-                    delete others[name]
+                    //delete others[name];
+                    others[name].pos = [-2000, -2000];
                 }
                 break;
             case 'ping':
                 ws.send(JSON.stringify({type: 'pong', ts: data.ts}));
                 break;
             case 'pong':
-                //console.log(data)
-                latency = new Date().getTime() - data.ts
-                latencies.push(latency)
+                //console.log(data);
+                latency = new Date().getTime() - data.ts;
+                latencies.push(latency);
                 if (latencies.length > LATENCY_SAMPLES) {
-                    latencies.shift()
+                    latencies.shift();
                 }
-                s = latencies.slice(0).sort(function(a, b) { return a - b})
-                //console.log(s)
-                median = s[Math.floor(s.length/2)]
-                //console.log(s.length, s.length/2, median)
-                myBall.setContent('<br/>' + myName + '<br/>med:' + median + 'ms<br/>' + latency + 'ms')
+                s = latencies.slice(0).sort(function(a, b) { return a - b;});
+                median = s[Math.floor(s.length/2)];
+                myBall.setContent('<br/>' + myName + '<br/>med:' + median + 'ms<br/>' + latency + 'ms');
                 break;
                 
             } // switch
@@ -162,23 +161,23 @@ define(function(require, exports, module) {
 
         var pinger;
         ws.onopen = function() {
-            console.log('open')
+            console.log('open');
             msg = JSON.stringify({'type': 'join', 'name': myName, 'pos': myPos});
             console.log(msg);
             ws.send(msg);
 
             pinger = setInterval(function(){
-                ws.send(JSON.stringify({type: 'ping', ts: new Date().getTime()}))
+                ws.send(JSON.stringify({type: 'ping', ts: new Date().getTime()}));
             }, LATENCY_INTERVAL);
         };
         
         ws.onclose = function(event) {
-            console.log('close', event.code, event.reason)
+            console.log('close', event.code, event.reason);
             clearInterval(pinger);
             myBall.setContent('<br/>' + myName + '<br/>[closed]');
             setTimeout( function() {
                 console.log('try to reconnect...');
-                connect()
+                connect();
             }, 2000);
             // TODO: give up after N tries, display status, button for reconnect
         };
@@ -186,7 +185,6 @@ define(function(require, exports, module) {
         return ws;
     } // connect
 
-    var ws = connect()
-
+    var ws = connect();
 
 });
