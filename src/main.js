@@ -3,30 +3,122 @@ define(function(require, exports, module) {
     // import dependencies
     var Engine = require('famous/core/Engine');
     var Modifier = require('famous/core/Modifier');
-    var StateModifier = require('famous/modifiers/StateModifier');
     var Transform = require('famous/core/Transform');
     var Surface = require('famous/core/Surface');
-    var Draggable = require('famous/modifiers/Draggable');
     var Timer    = require('famous/utilities/Timer');
+    var EventHandler = require('famous/core/EventHandler');
+    var HeaderFooterLayout = require("famous/views/HeaderFooterLayout");
+    var GridLayout = require("famous/views/GridLayout");
 
-    var myName = 'p' + Math.floor(Math.random() * 1000);
-    var myPos = [ Math.floor(Math.random() * 300) - 150, Math.floor(Math.random() * 300) - 150];
+    var AppView = require('views/AppView');
+    var mainContext = Engine.createContext();
+    var appView = new AppView();
+    var layout;
 
-    var myBall = new Surface({
-        content: '<br/>' + myName,
-        size: [100, 100],
-        properties: {
-            backgroundColor: '#44CC44',
-            borderRadius: '50px',
-            textAlign: 'center',
+    var ACTIVE=true;
+
+    function createLayout() {
+        layout = new HeaderFooterLayout({
+            headerSize: 50,
+            footerSize: 100
+        });
+        console.log(layout);
+        mainContext.add(layout);
+    }
+
+    function addHeader() {
+        head = new Surface({
+            content: 'Latency Tester [click to toggle active]',
+            classes: ['grey-bg'],
+            properties: {
+                lineHeight: '50px',
+                textAlign: 'center'
+            }
+        });
+
+        head.on('click', function(event) {
+            if (ACTIVE) {
+                head.setContent('Latency Tester [STOPPED]');
+                ACTIVE = false;
+                ws.close();
+            }
+            else {
+                head.setContent('Latency Tester [RUNNING]');
+                ACTIVE = true;
+                ws = connect();
+            }
+        });
+        layout.header.add(head);
+    }
+
+    var PING_INTERVAL = 1000;
+    var UPDATE_INTERVAL = 1;
+
+    function addFooter() {
+
+        var grid = new GridLayout({
+            dimensions: [4, 2],
+        });
+
+        var surfaces = [];
+        grid.sequenceFrom(surfaces);
+
+        surfaces.push(new Surface({
+            content: 'Ping: ',
+            size: [undefined, undefined],
+            styles: ['grey-bg']
+        }));
+
+        for (var i = 0; i < 3; i++) {
+            var ms = Math.pow(10, i+1);
+            ping = new Surface({
+                content: ms + ' ms',
+                size: [undefined, undefined],
+                properties: {
+                    backgroundColor: "rgb(140, 140," + (160 + 20 * i) + ")"
+                }
+            });
+            ping.ms = ms;
+            ping.on('click', function(event) {
+                console.log(this.ms + ' ms');
+                PING_INTERVAL = this.ms;
+                clearPinger();
+                setPinger();
+            });
+            surfaces.push(ping);
         }
-    });
 
-    myBallZOrder = new StateModifier({
-        transform: Transform.translate(0,0,10)
-    });
+        surfaces.push(new Surface({
+            content: 'Update: ',
+            size: [undefined, undefined],
+            styles: ['grey-bg']
+        }));
+        for (var j = 0; j < 3; j++) {
+            var ms = Math.pow(10, j);
+            update = new Surface({
+                content: ms + ' ms',
+                size: [undefined, undefined],
+                properties: {
+                    backgroundColor: "rgb(140, " + (150 + 25 * j) + ", 140)"
+                }
+            });
+            update.ms = ms;
+            update.on('click', function(event) {
+                console.log(this.ms + ' ms');
+                UPDATE_INTERVAL = this.ms;
+                clearUpdater();
+                setUpdater();
+            });
+            surfaces.push(update);
+        }
 
-    var others = {};
+        layout.footer.add(grid);
+    }
+
+    createLayout();
+    addHeader();
+    layout.content.add(appView);
+    addFooter();
 
     function get_random_color() {
         return '#' + Math.random().toString(16).substring(4);
@@ -42,46 +134,101 @@ define(function(require, exports, module) {
         return '#' + randomChannel(brightness) + randomChannel(brightness) + randomChannel(brightness);
     }
 
-    var draggable = new Draggable();
-    draggable.subscribe(myBall);
-    draggable.on('update', function(data) {
-        myPos = data.position;
-        sendUpdate();
-    });
-    draggable.on('end', function(data) {
-        console.log(latencies);
-    });
-
-    // a modifier that centers the surface
-    var centerModifier = new Modifier({origin : [0.5, 0.5]});
-
-    // define the scene graph
-    var mainContext = Engine.createContext();
-    n1 = mainContext
-         .add(centerModifier);
-    n1.add(draggable)
-        .add(myBallZOrder)
-        .add(myBall);
-
-    draggable.setPosition(myPos);
-    console.log(draggable);
-    
+   
     var counter = 0;
 
     var host = location.origin.replace(/^http/, 'ws');
     
-    var LATENCY_INTERVAL = 100;
-    var LATENCY_SAMPLES = Math.floor(10000 / LATENCY_INTERVAL);
+    var LATENCY_SAMPLES = Math.floor(10000 / PING_INTERVAL);
     var latencies = [];
+    var bytes = 0;
+    var lastBytes = 0;
+    var lastTime = 0;
+    var BPS_SAMPLES = 10; // 1/sec
+    var Bps = [];
+    var BpsMed = 0;
+    var BpsAvg = 0;
+    var BpsMax = 0;
 
-    function sendUpdate() {
-        msg = { 'type': 'update',
-                'name': myName, 
-                'pos': myPos,
-                'ts': '' + new Date().getTime()};
-        ws.send(JSON.stringify(msg));
+
+    var pinger;
+    var bandwidth;
+    var updater;
+    function setPinger() {
+        console.log('set pinger', PING_INTERVAL);
+        pinger = Timer.setInterval(function(){
+            //console.log('ping');
+            send({type: 'ping', ts: new Date().getTime()});
+        }, PING_INTERVAL);
     }
-    
+    function clearPinger() {
+        Timer.clear(pinger);
+    }
+
+    function setBandwidther() {
+        bandwidth = Timer.setInterval(function(){
+            now = new Date().getTime();
+            bps = Math.round((bytes - lastBytes)/((now - lastTime)/1000.0));
+            lastTime = now;
+            lastBytes = bytes;
+
+            Bps.push(bps);
+            if (Bps.length > BPS_SAMPLES) {
+                Bps.shift();
+            }
+            s = Bps.slice(0).sort(function(a, b) { return a - b;});
+            BpsMed = s[Math.floor(s.length/2)];
+            BpsMax = Math.max(Bps)
+            sum = Bps.reduce(function(a, b) { return a + b });
+            BpsAvg = Math.round(sum / Bps.length);
+
+        }, 250);
+    }
+    function clearBandwidther() {
+        Timer.clear(bandwidth);
+    }
+    function setUpdater() {
+        updater = Timer.setInterval(function() {
+            if ( (currPos < lastPos || currPos > lastPos)) {
+                sendPos(currPos);
+                lastPos = currPos.slice(0);
+            }
+        }, UPDATE_INTERVAL);
+    }
+    function clearUpdater() {
+        Timer.clear(updater);
+    }
+
+
+    function send(msg) {
+        msg = JSON.stringify(msg);
+        ws.send(msg);
+        bytes += msg.length;
+    }
+
+    var currPos = [0,0];
+    var lastPos = [0,0];
+
+    function sendPos(pos) {
+        msg = { 'type': 'update',
+                'name': appView.myName, 
+                'pos': pos,
+                'ts': '' + new Date().getTime()};
+        send(msg);
+    }
+
+    var networkEventHandler = new EventHandler();
+    networkEventHandler.subscribe(appView);
+    networkEventHandler.on('updatePos', function(pos) {
+        if (UPDATE_INTERVAL === 1) {
+            sendPos(pos);
+        }
+        else {
+            currPos = pos;
+        }
+    });
+
+
     function connect() {
         ws = new WebSocket(host);
 
@@ -94,6 +241,7 @@ define(function(require, exports, module) {
             //    console.log('not listening to myself');
             //    return;
             //}
+            others = appView.others
             
             switch (data.type) {
             case 'join':
@@ -109,11 +257,11 @@ define(function(require, exports, module) {
                 var ball = Object({
                     name: name,
                     surface: new Surface({
-                        content: '<br/>' + name,
-                        size: (name === myName) ? [100, 100] : [80, 80],
+                        content: '' + name,
+                        size: (name === appView.myName) ? [100, 100] : [80, 80],
                         properties: {
-                            backgroundColor: (name === myName) ? '#339933' : randomColor(180),
-                            borderRadius: (name === myName) ? '50px' : '40px',
+                            backgroundColor: (name === appView.myName) ? '#339933' : randomColor(180),
+                            borderRadius: (name === appView.myName) ? '50px' : '40px',
                             textAlign: 'center',
                         }
                     }),
@@ -146,7 +294,7 @@ define(function(require, exports, module) {
                 }
                 break;
             case 'ping':
-                ws.send(JSON.stringify({type: 'pong', ts: data.ts}));
+                send({type: 'pong', ts: data.ts});
                 break;
             case 'pong':
                 //console.log(data);
@@ -157,33 +305,38 @@ define(function(require, exports, module) {
                 }
                 s = latencies.slice(0).sort(function(a, b) { return a - b;});
                 median = s[Math.floor(s.length/2)];
-                myBall.setContent('<br/>' + myName + '<br/>med:' + median + 'ms<br/>' + latency + 'ms');
+                appView.myBall.setContent('' + appView.myName + '<br/>med:' + median + 'ms<br/>' + latency + ' ms<br/>' + BpsAvg + ' B/s');
                 break;
                 
             } // switch
               
         }; // onmessage
 
-        var pinger;
+
+
         ws.onopen = function() {
             console.log('open');
-            msg = JSON.stringify({'type': 'join', 'name': myName, 'pos': myPos});
+            msg = {'type': 'join', 'name': appView.myName, 'pos': appView.myPos};
             console.log(msg);
-            ws.send(msg);
+            send(msg);
 
-            pinger = setInterval(function(){
-                ws.send(JSON.stringify({type: 'ping', ts: new Date().getTime()}));
-            }, LATENCY_INTERVAL);
+            setPinger();
+            setBandwidther();
+            setUpdater();
         };
         
         ws.onclose = function(event) {
             console.log('close', event.code, event.reason);
-            clearInterval(pinger);
-            myBall.setContent('<br/>' + myName + '<br/>[closed]');
-            setTimeout( function() {
-                console.log('try to reconnect...');
-                connect();
-            }, 2000);
+            clearPinger();
+            clearBandwidther();
+            clearUpdater();
+            appView.myBall.setContent('' + appView.myName + '<br/>[closed]');
+            if (ACTIVE) {
+                setTimeout( function() {
+                    console.log('try to reconnect...');
+                    connect();
+                }, 2000);
+            }
             // TODO: give up after N tries, display status, button for reconnect
         };
 
@@ -191,9 +344,6 @@ define(function(require, exports, module) {
     } // connect
 
     var ws = connect();
+
     // TODO: track inactivity and close the conn after awhile, or at least stop sending pings
-    // TODO: ui elements for: connection state, ping speed
-    // TODO: physics
-    // TODO: multiple units per player
-    // TOOD: track bandwidth usage
 });

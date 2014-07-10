@@ -7,3 +7,8 @@ html {
     -webkit-backface-visibility: visible;
     backface-visibility: visible;
 }
+
+.grey-bg {
+    background-color: #444;
+    color: #FFF;
+}
