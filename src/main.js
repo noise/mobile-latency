@@ -22,6 +22,10 @@ define(function(require, exports, module) {
         }
     });
 
+    myBallZOrder = new StateModifier({
+        transform: Transform.translate(0,0,10)
+    });
+
     var others = {};
 
     function get_random_color() {
@@ -56,6 +60,7 @@ define(function(require, exports, module) {
     n1 = mainContext
          .add(centerModifier);
     n1.add(draggable)
+        .add(myBallZOrder)
         .add(myBall);
 
     draggable.setPosition(myPos);
@@ -85,10 +90,10 @@ define(function(require, exports, module) {
             //console.log('onmessage, data:', data)
 
             name = data.name;
-            if (name === myName) {
-                console.log('not listening to myself');
-                return;
-            }
+            //if (name === myName) {
+            //    console.log('not listening to myself');
+            //    return;
+            //}
             
             switch (data.type) {
             case 'join':
@@ -105,10 +110,10 @@ define(function(require, exports, module) {
                     name: name,
                     surface: new Surface({
                         content: '<br/>' + name,
-                        size: [80, 80],
+                        size: (name === myName) ? [100, 100] : [80, 80],
                         properties: {
-                            backgroundColor: randomColor(180),
-                            borderRadius: '40px',
+                            backgroundColor: (name === myName) ? '#339933' : randomColor(180),
+                            borderRadius: (name === myName) ? '50px' : '40px',
                             textAlign: 'center',
                         }
                     }),
@@ -186,5 +191,9 @@ define(function(require, exports, module) {
     } // connect
 
     var ws = connect();
-
+    // TODO: track inactivity and close the conn after awhile, or at least stop sending pings
+    // TODO: ui elements for: connection state, ping speed
+    // TODO: physics
+    // TODO: multiple units per player
+    // TOOD: track bandwidth usage
 });

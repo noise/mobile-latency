@@ -16,9 +16,9 @@ var wss = new WebSocketServer({server: server});
 
 wss.broadcast = function (data, sender) {
     for (var i in this.clients) {
-        if (this.clients[i] !== sender) {
+        //if (this.clients[i] !== sender) {
             this.clients[i].send(data);
-        }
+        //}
     }
 };
 
